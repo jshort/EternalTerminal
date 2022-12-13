@@ -48,6 +48,7 @@ ssize_t UnixSocketHandler::read(int fd, void *buf, size_t count) {
 #else
   ssize_t readBytes = ::read(fd, buf, count);
 #endif
+  VLOG(4) << "Unixsocket handler read byte count: " << readBytes;
   auto localErrno = GetErrno();
   if (readBytes < 0 && localErrno != EAGAIN && localErrno != EWOULDBLOCK) {
     LOG(WARNING) << "Error reading: " << localErrno << " "

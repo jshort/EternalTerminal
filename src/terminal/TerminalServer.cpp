@@ -82,6 +82,7 @@ void TerminalServer::run() {
     if (FD_ISSET(terminalRouter->getServerFd(), &rfds)) {
       auto idKeyPair = terminalRouter->acceptNewConnection();
       if (idKeyPair.id.length()) {
+        VLOG(4) << "New client key being added: " << idKeyPair.id;
         addClientKey(idKeyPair.id, idKeyPair.key);
       }
     }
@@ -302,6 +303,8 @@ void TerminalServer::runTerminal(
           serverClientState->writePacket(
               Packet(TerminalPacketType::TERMINAL_BUFFER, protoToString(tb)));
         } else {
+          VLOG(3) << " Terminal Server bytes read: " << rc
+                  << " from FD: " << terminalFd;
           LOG(INFO) << "Terminal session ended";
           run = false;
           break;

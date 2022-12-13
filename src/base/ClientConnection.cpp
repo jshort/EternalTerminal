@@ -40,8 +40,7 @@ bool ClientConnection::connect() {
       STERROR << "Error connecting to server: " << response.status() << ": "
               << response.error();
       CLOG(INFO, "stdout") << "Error connecting to server: "
-                           << response.status() << ": " << response.error()
-                           << endl;
+                           << response.status() << ": " << response.error();
       string s = string("Error connecting to server: ") +
                  to_string(response.status()) + string(": ") + response.error();
       throw std::runtime_error(s.c_str());
@@ -90,7 +89,7 @@ void ClientConnection::waitReconnect() {
 
 void ClientConnection::pollReconnect() {
   el::Helpers::setThreadName("Reconnect");
-  LOG(INFO) << "Trying to reconnect to " << remoteEndpoint << endl;
+  LOG(INFO) << "Trying to reconnect to " << remoteEndpoint;
   while (socketFd == -1) {
     {
       lock_guard<std::recursive_mutex> guard(connectionMutex);
@@ -98,7 +97,7 @@ void ClientConnection::pollReconnect() {
         LOG(INFO) << "Aborting reconnect loop because shutdown was called";
         return;
       }
-      LOG_EVERY_N(10, INFO) << "In reconnect loop " << remoteEndpoint << endl;
+      LOG_EVERY_N(10, INFO) << "In reconnect loop " << remoteEndpoint;
       int newSocketFd = socketHandler->connect(remoteEndpoint);
       if (newSocketFd != -1) {
         try {
@@ -108,8 +107,8 @@ void ClientConnection::pollReconnect() {
           socketHandler->writeProto(newSocketFd, request, true);
           et::ConnectResponse response =
               socketHandler->readProto<et::ConnectResponse>(newSocketFd, true);
-          LOG(INFO) << "Got response with status: " << response.status() << " "
-                    << INVALID_KEY;
+          LOG(INFO) << "Got response with status: " << response.status()
+                    << " and invalid client is: " << INVALID_KEY;
           if (response.status() == INVALID_KEY) {
             LOG(INFO) << "Got invalid key on reconnect, assume that server has "
                          "terminated the session.";
@@ -123,7 +122,7 @@ void ClientConnection::pollReconnect() {
                     << ": " << response.error();
             CLOG(INFO, "stdout")
                 << "Error reconnecting to server: " << response.status() << ": "
-                << response.error() << endl;
+                << response.error();
             socketHandler->close(newSocketFd);
           } else {
             recover(newSocketFd);

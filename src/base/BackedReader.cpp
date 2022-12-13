@@ -49,6 +49,7 @@ int BackedReader::read(Packet* packet) {
       // Connection is closed.  Instead of closing the socket, set EPIPE.
       // In EternalTCP, the server needs to explictly tell the client that
       // the session is over.
+      VLOG(2) << "0 bytes read, server might be saying session is over.";
       SetErrno(EPIPE);
       return -1;
     } else if (bytesRead > 0) {
@@ -75,6 +76,7 @@ int BackedReader::read(Packet* packet) {
       // Connection is closed.  Instead of closing the socket, set EPIPE.
       // In EternalTCP, the server needs to explictly tell the client that
       // the session is over.
+      VLOG(2) << "0 bytes read, server might be saying session is over.";
       SetErrno(EPIPE);
       return -1;
     } else if (bytesRead == -1) {

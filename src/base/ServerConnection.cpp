@@ -77,8 +77,11 @@ void ServerConnection::clientHandler(int clientSocketFd) {
 
       clientKeyExistsNow = clientKeyExists(clientId);
       if (clientConnectionExists(clientId)) {
+        VLOG(1) << "Client/server connection already exists for: " << clientId;
         serverClientState = getClientConnection(clientId);
       } else if (clientKeyExistsNow) {
+        VLOG(1) << "Client key exists for: " << clientId
+                << " but is not connected yet.";
         createdClientConnection = true;
         serverClientState.reset(new ServerClientConnection(
             socketHandler, clientId, clientSocketFd, clientKeys.at(clientId)));
@@ -115,6 +118,7 @@ void ServerConnection::clientHandler(int clientSocketFd) {
         }
       }
     } else {
+      VLOG(1) << "Returning client with id " << clientId;
       et::ConnectResponse response;
       response.set_status(RETURNING_CLIENT);
       socketHandler->writeProto(clientSocketFd, response, true);
