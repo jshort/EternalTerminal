@@ -37,6 +37,16 @@ class ForwardSourceHandler {
   /** @brief Closes sockets that were accepted but not yet assigned an ID. */
   void closeUnassignedFd(int fd);
 
+  /**
+   * @brief Closes sockets accepted at or before `now - timeoutSeconds` that the
+   * peer never claimed with a destination response.
+   *
+   * Nothing else ever retires an unassigned fd, so without this a peer that
+   * stops answering (a disconnected or sleeping client) strands every socket
+   * accepted from then on.
+   */
+  void closeExpiredUnassignedFds(time_t now, time_t timeoutSeconds);
+
   /** @brief Maps a socketId (from the control channel) to a pending fd. */
   void addSocket(int socketId, int sourceFd);
 
@@ -57,8 +67,11 @@ class ForwardSourceHandler {
   SocketEndpoint source;
   /** @brief Remote destination endpoint that receives forwarded data. */
   SocketEndpoint destination;
-  /** @brief Sockets that are awaiting assignment from the control stream. */
-  unordered_set<int> unassignedFds;
+  /**
+   * @brief Sockets awaiting assignment from the control stream, mapped to the
+   * time they were accepted so they can be timed out.
+   */
+  unordered_map<int, time_t> unassignedFds;
   /** @brief Maps logical socket IDs to their accepted file descriptors. */
   unordered_map<int, int> socketFdMap;
 };

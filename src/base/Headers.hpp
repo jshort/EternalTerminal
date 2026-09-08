@@ -386,6 +386,52 @@ inline string protoToString(const T& t) {
 }
 
 /**
+ * Add a fd to an fd_set, rejecting descriptors select() cannot represent.
+ *
+ * On POSIX, FD_SET indexes a fixed FD_SETSIZE-bit bitmap with no bounds check,
+ * so a fd >= FD_SETSIZE writes past the end of the fd_set -- for the usual
+ * stack-allocated fd_set that silently corrupts neighbouring locals. select()
+ * then copies FDS_BYTES(nfds) back over the same object, widening the damage.
+ * Any loop that adds descriptors whose count is not statically bounded must go
+ * through this rather than calling FD_SET directly.
+ *
+ * @return true if the fd was added, and may therefore be passed to
+ *   fdIsSetChecked() after select() returns.
+ */
+inline bool fdSetChecked(int fd, fd_set* fdset) {
+  if (fd < 0) {
+    return false;
+  }
+#ifndef WIN32
+  // A Windows fd_set is a counted array of handles rather than a bitmap
+  // indexed by fd, and its FD_SET already bounds checks itself.
+  if (fd >= FD_SETSIZE) {
+    return false;
+  }
+#endif
+  FD_SET(fd, fdset);
+  return true;
+}
+
+/**
+ * Test a fd in an fd_set, tolerating descriptors select() cannot represent.
+ *
+ * @return true if the fd is in the set, or false if it is out of range and so
+ *   could never have been added by fdSetChecked().
+ */
+inline bool fdIsSetChecked(int fd, fd_set* fdset) {
+  if (fd < 0) {
+    return false;
+  }
+#ifndef WIN32
+  if (fd >= FD_SETSIZE) {
+    return false;
+  }
+#endif
+  return FD_ISSET(fd, fdset) != 0;
+}
+
+/**
  * Wait on a fd to have data available.
  *
  * @return true if the fd has data, or false if the timeout (of 1 second) is

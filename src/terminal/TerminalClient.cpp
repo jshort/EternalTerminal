@@ -209,8 +209,9 @@ void TerminalClient::run(const string& command, const bool noexit) {
     int consoleFd = -1;
     if (console && !consoleInputDisabled) {
       consoleFd = console->getFd();
-      maxfd = consoleFd;
-      FD_SET(consoleFd, &rfd);
+      if (fdSetChecked(consoleFd, &rfd)) {
+        maxfd = consoleFd;
+      }
 #ifndef WIN32
       // PseudoTerminalConsole writes to stdout and reads keystrokes from
       // stdin. FakeConsole (tests) uses one pipe for both; selecting the
@@ -223,20 +224,26 @@ void TerminalClient::run(const string& command, const bool noexit) {
     }
     if (console && consoleOut.hasPendingData()) {
       int outFd = console->getFd();
-      FD_SET(outFd, &wfd);
-      maxfd = max(maxfd, outFd);
+      if (fdSetChecked(outFd, &wfd)) {
+        maxfd = max(maxfd, outFd);
+      }
     }
     int clientFd = connection->getSocketFd();
     if (clientFd > 0 && consoleOut.size() < WriteBuffer::FLUSH_THRESHOLD) {
-      FD_SET(clientFd, &rfd);
-      maxfd = max(maxfd, clientFd);
+      if (fdSetChecked(clientFd, &rfd)) {
+        maxfd = max(maxfd, clientFd);
+      }
     }
     // Include port forward sockets in select for low-latency forwarding.
+    // There is no bound on how many of these a session can accumulate, so any
+    // that don't fit in the fd_set are left out and picked up by the polling
+    // path in PortForwardHandler::update() below instead.
     set<int> pfFds;
     portForwardHandler->getForwardFds(&pfFds);
     for (int fd : pfFds) {
-      FD_SET(fd, &rfd);
-      maxfd = max(maxfd, fd);
+      if (fdSetChecked(fd, &rfd)) {
+        maxfd = max(maxfd, fd);
+      }
     }
     tv.tv_sec = 0;
     tv.tv_usec = 10000;
@@ -245,7 +252,7 @@ void TerminalClient::run(const string& command, const bool noexit) {
     try {
       bool skipServerRead = false;
       if (console && consoleFd >= 0) {
-        bool inputReady = FD_ISSET(consoleFd, &rfd);
+        bool inputReady = fdIsSetChecked(consoleFd, &rfd);
 #ifndef WIN32
         if (consoleFd == STDOUT_FILENO) {
           inputReady = inputReady || FD_ISSET(STDIN_FILENO, &rfd);
@@ -343,7 +350,7 @@ void TerminalClient::run(const string& command, const bool noexit) {
         }
       }
 
-      if (!skipServerRead && clientFd > 0 && FD_ISSET(clientFd, &rfd)) {
+      if (!skipServerRead && clientFd > 0 && fdIsSetChecked(clientFd, &rfd)) {
         VLOG(4) << "Clientfd is selected";
         // Cap how much we pull from the server so Ctrl+C can be handled
         // before megabytes of flood are painted. Sequence numbers are

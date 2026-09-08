@@ -1,6 +1,14 @@
 #include "ForwardSourceHandler.hpp"
 
 namespace et {
+namespace {
+// On a live connection the destination response comes back within one round
+// trip. Anything still unclaimed after this long means the peer is gone, and
+// holding the fd both leaks it and pushes the fd numbers the select() loops
+// have to cope with ever higher.
+const time_t UNASSIGNED_FD_TIMEOUT_SECONDS = 300;
+}  // namespace
+
 ForwardSourceHandler::ForwardSourceHandler(
     shared_ptr<SocketHandler> _socketHandler, const SocketEndpoint& _source,
     const SocketEndpoint& _destination, bool alreadyListening)
@@ -23,7 +31,7 @@ int ForwardSourceHandler::listen() {
     if (fd > -1) {
       LOG(INFO) << "Tunnel " << source << " -> " << destination
                 << " socket created with fd " << fd;
-      unassignedFds.insert(fd);
+      unassignedFds[fd] = time(NULL);
       return fd;
     }
   }
@@ -31,6 +39,8 @@ int ForwardSourceHandler::listen() {
 }
 
 void ForwardSourceHandler::update(vector<PortForwardData>* data) {
+  closeExpiredUnassignedFds(time(NULL), UNASSIGNED_FD_TIMEOUT_SECONDS);
+
   vector<int> socketsToRemove;
 
   for (auto& it : socketFdMap) {
@@ -86,6 +96,21 @@ void ForwardSourceHandler::closeUnassignedFd(int fd) {
   unassignedFds.erase(fd);
 }
 
+void ForwardSourceHandler::closeExpiredUnassignedFds(time_t now,
+                                                     time_t timeoutSeconds) {
+  for (auto it = unassignedFds.begin(); it != unassignedFds.end();) {
+    if (now - it->second < timeoutSeconds) {
+      ++it;
+      continue;
+    }
+    LOG(WARNING) << "Closing port forward socket that was never claimed by the "
+                    "peer: "
+                 << it->first;
+    socketHandler->close(it->first);
+    it = unassignedFds.erase(it);
+  }
+}
+
 void ForwardSourceHandler::addSocket(int socketId, int sourceFd) {
   if (unassignedFds.find(sourceFd) == unassignedFds.end()) {
     STERROR << "Tried to close an unassigned fd that doesn't exist "
@@ -104,8 +129,8 @@ void ForwardSourceHandler::getActiveFds(set<int>* fds) {
   for (auto& it : socketFdMap) {
     fds->insert(it.second);
   }
-  for (int fd : unassignedFds) {
-    fds->insert(fd);
+  for (const auto& it : unassignedFds) {
+    fds->insert(it.first);
   }
 }
 

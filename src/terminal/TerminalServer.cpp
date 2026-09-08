@@ -469,25 +469,31 @@ void TerminalServer::runTerminal(
                             ? terminalOutputBuffer.canAcceptMore()
                             : serverClientState->canBufferWrite(2 * BUF_SIZE);
     if (readTerminal && !holdDroppableForClient) {
-      FD_SET(terminalFd, &rfd);
-      maxfd = terminalFd;
+      if (fdSetChecked(terminalFd, &rfd)) {
+        maxfd = terminalFd;
+      }
     }
     if (connected) {
       // Reapply every iteration: reconnect replaces the socket, kernel
       // tuning is per-socket, and fd numbers are reused.
       serverSocketHandler->minimizeKernelBuffering(serverClientFd);
-      FD_SET(serverClientFd, &rfd);
-      maxfd = max(maxfd, serverClientFd);
+      if (fdSetChecked(serverClientFd, &rfd)) {
+        maxfd = max(maxfd, serverClientFd);
+      }
       if (terminalOutputBuffer.hasPendingData() && !holdDroppableForClient) {
-        FD_SET(serverClientFd, &wfd);
+        fdSetChecked(serverClientFd, &wfd);
       }
     }
     // Include port forward sockets in select for low-latency forwarding.
+    // There is no bound on how many of these a session can accumulate, so any
+    // that don't fit in the fd_set are left out and picked up by the polling
+    // path in PortForwardHandler::update() below instead.
     set<int> pfFds;
     portForwardHandler->getForwardFds(&pfFds);
     for (int fd : pfFds) {
-      FD_SET(fd, &rfd);
-      maxfd = max(maxfd, fd);
+      if (fdSetChecked(fd, &rfd)) {
+        maxfd = max(maxfd, fd);
+      }
     }
     tv.tv_sec = 0;
     tv.tv_usec = 100000;
@@ -499,7 +505,7 @@ void TerminalServer::runTerminal(
       // Handle client input before draining the output queue. Otherwise a
       // writable socket (fast client, or a client just resumed) sends the
       // whole backlog before Ctrl+C is read, and flushIfLarge sees nothing.
-      if (serverClientFd > 0 && FD_ISSET(serverClientFd, &rfd)) {
+      if (serverClientFd > 0 && fdIsSetChecked(serverClientFd, &rfd)) {
         VLOG(3) << "ServerClientFd is selected";
         while (serverClientState->hasData()) {
           VLOG(3) << "ServerClientState has data";
@@ -585,7 +591,7 @@ void TerminalServer::runTerminal(
       // Check for data to receive; the received
       // data includes also the data previously sent
       // on the same master descriptor (line 90).
-      if (FD_ISSET(terminalFd, &rfd)) {
+      if (fdIsSetChecked(terminalFd, &rfd)) {
         // Read from terminal and write to client
         memset(b, 0, BUF_SIZE);
         int rc = read(terminalFd, b, BUF_SIZE);

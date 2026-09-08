@@ -441,3 +441,61 @@ TEST_CASE("ForwardSourceHandler closeSocket closes and removes socket",
   REQUIRE(socketHandler->closedFds.size() == 1);
   REQUIRE(socketHandler->closedFds[0] == 42);
 }
+
+TEST_CASE("ForwardSourceHandler reaps unassigned fds the peer never claimed",
+          "[ForwardSourceHandler]") {
+  auto socketHandler = std::make_shared<MockSocketHandler>();
+  socketHandler->setEndpointFds({100});
+  socketHandler->enqueueAccept(42);
+
+  SocketEndpoint source;
+  source.set_name("localhost");
+  source.set_port(8080);
+  SocketEndpoint destination;
+  destination.set_name("remote");
+  destination.set_port(9090);
+  ForwardSourceHandler handler(socketHandler, source, destination);
+
+  int fd = handler.listen();
+  REQUIRE(handler.hasUnassignedFd(fd));
+
+  const time_t acceptedAt = time(NULL);
+
+  handler.closeExpiredUnassignedFds(acceptedAt + 59, 60);
+  REQUIRE(handler.hasUnassignedFd(fd));
+  REQUIRE(socketHandler->closedFds.empty());
+
+  handler.closeExpiredUnassignedFds(acceptedAt + 60, 60);
+  REQUIRE_FALSE(handler.hasUnassignedFd(fd));
+  REQUIRE(socketHandler->closedFds.size() == 1);
+  REQUIRE(socketHandler->closedFds[0] == 42);
+
+  set<int> activeFds;
+  handler.getActiveFds(&activeFds);
+  REQUIRE(activeFds.count(42) == 0);
+}
+
+TEST_CASE("ForwardSourceHandler does not reap fds that were assigned",
+          "[ForwardSourceHandler]") {
+  auto socketHandler = std::make_shared<MockSocketHandler>();
+  socketHandler->setEndpointFds({100});
+  socketHandler->enqueueAccept(42);
+
+  SocketEndpoint source;
+  source.set_name("localhost");
+  source.set_port(8080);
+  SocketEndpoint destination;
+  destination.set_name("remote");
+  destination.set_port(9090);
+  ForwardSourceHandler handler(socketHandler, source, destination);
+
+  int fd = handler.listen();
+  handler.addSocket(123, fd);
+
+  handler.closeExpiredUnassignedFds(time(NULL) + 100000, 60);
+
+  REQUIRE(socketHandler->closedFds.empty());
+  set<int> activeFds;
+  handler.getActiveFds(&activeFds);
+  REQUIRE(activeFds.count(42) == 1);
+}
